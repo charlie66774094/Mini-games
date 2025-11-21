@@ -53,5 +53,9 @@ PolyVerse-Arcade/
 ├── index.html      # 3D 主页 (入口)
 │                   # 包含全息地球背景、游戏选单、GSAP 转场逻辑
 ├── game1.html      # 游戏 01: Zen Stack
+|
+├── game2.html
+|
+├── game3.html
 │                   # 包含堆叠玩法核心逻辑、物理计算、PBR 材质渲染
 └── README.md       # 项目说明文档
