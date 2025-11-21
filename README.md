@@ -4,6 +4,8 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Tech](https://img.shields.io/badge/Three.js-r160-black) ![AI](https://img.shields.io/badge/Co--Pilot-Gemini%203-4285F4)
 
+##点击游玩：*https://charlie66774094.github.io/Mini-games/*
+
 ## 💡 关于本项目 (About)
 
 **PolyVerse Arcade** 是一个基于 WebGL 的高性能 3D 游戏合集网站。它打破了传统网页游戏的平面限制，采用了极具未来感的 **Cyberpunk (赛博朋克)** 视觉风格，并实现了从 3D 选单大厅到游戏场景的无缝交互。
