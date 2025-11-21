@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Sky Shepherd | PolyVerse</title>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;800&display=swap" rel="stylesheet">
+    <style>
+        body { margin: 0; overflow: hidden; background: #87CEEB; font-family: 'Nunito', sans-serif; user-select: none; -webkit-tap-highlight-color: transparent; }
+        
+        /* UI 风格 - 圆润、可爱 */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        .top-bar { display: flex; justify-content: space-between; align-items: center; pointer-events: auto; }
+        
+        .score-panel {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(5px);
+            padding: 10px 20px;
+            border-radius: 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 800; color: #555;
+        }
+        
+        #sheep-count { font-size: 1.5rem; color: #ff9a9e; }
+
+        /* 虚拟摇杆 (移动端) */
+        #joystick-zone {
+            position: absolute; bottom: 50px; left: 50px; width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.2); border-radius: 50%;
+            display: none; /* JS 会检测设备开启 */
+            pointer-events: auto;
+        }
+        #joystick-knob {
+            position: absolute; top: 50%; left: 50%; width: 50px; height: 50px;
+            background: white; border-radius: 50%; transform: translate(-50%, -50%);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+        }
+
+        /* 退出按钮 */
+        .exit-btn {
+            background: white; color: #555; border: none; padding: 10px 20px; border-radius: 20px;
+            font-family: 'Nunito', sans-serif; font-weight: 800; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1); transition: 0.2s;
+        }
+        .exit-btn:hover { transform: scale(1.05); color: #ff9a9e; }
+
+        /* 胜利/提示文字 */
+        #message {
+            position: absolute; top: 30%; width: 100%; text-align: center;
+            font-size: 2rem; color: white; font-weight: 800;
+            text-shadow: 0 4px 0 rgba(0,0,0,0.1); opacity: 0; transition: opacity 0.5s;
+            pointer-events: none;
+        }
+        
+        /* 引导 */
+        #tutorial {
+            position: absolute; bottom: 100px; width: 100%; text-align: center;
+            color: rgba(255,255,255,0.8); font-size: 0.9rem; pointer-events: none;
+            animation: float 2s infinite;
+        }
+        @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+
+    </style>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div class="top-bar">
+            <div class="score-panel">
+                <span>SAVED:</span>
+                <span id="sheep-count">0 / 10</span>
+            </div>
+            <button class="exit-btn" onclick="location.href='index.html'">EXIT</button>
+        </div>
+        
+        <div id="message">MISSION COMPLETE!</div>
+        <div id="tutorial">Use W/A/S/D or Drag to Move</div>
+        <div id="joystick-zone"><div id="joystick-knob"></div></div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+
+        // --- 1. 初始化与卡通渲染设置 ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#87CEEB'); // 吉卜力蓝
+        // 柔和的环境雾，让远处岛屿与天融为一体
+        scene.fog = new THREE.Fog('#87CEEB', 20, 60);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 15, 20);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap; // 柔和阴影
+        document.body.appendChild(renderer.domElement);
+
+        // 生成卡通梯度纹理 (3阶色调：亮、中、暗)
+        // 这是不用加载外部图片实现 Toon Shading 的秘诀
+        function createGradientTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 4; canvas.height = 1;
+            const context = canvas.getContext('2d');
+            const gradient = context.createLinearGradient(0, 0, 4, 0);
+            // 定义光照阶梯
+            gradient.addColorStop(0, '#444');
+            gradient.addColorStop(0.5, '#888');
+            gradient.addColorStop(1.0, '#fff');
+            context.fillStyle = gradient;
+            context.fillRect(0, 0, 4, 1);
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.magFilter = THREE.NearestFilter; // 关键：保持边缘清晰，不要模糊
+            texture.minFilter = THREE.NearestFilter;
+            return texture;
+        }
+        const gradientMap = createGradientTexture();
+
+        // 通用卡通材质生成器
+        function createToonMaterial(color) {
+            return new THREE.MeshToonMaterial({
+                color: color,
+                gradientMap: gradientMap, // 应用阶梯光照
+            });
+        }
+
+        // --- 2. 灯光 ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // 亮一点，因为是白天
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfff0dd, 0.8); // 暖色阳光
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.left = -30;
+        dirLight.shadow.camera.right = 30;
+        dirLight.shadow.camera.top = 30;
+        dirLight.shadow.camera.bottom = -30;
+        scene.add(dirLight);
+
+        // --- 3. 世界构建 (World Generation) ---
+        const worldGroup = new THREE.Group();
+        scene.add(worldGroup);
+
+        // 浮空岛主体
+        const groundGeo = new THREE.CylinderGeometry(25, 20, 5, 64);
+        const groundMat = createToonMaterial(0x7cfc00); // 草地绿
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.position.y = -2.5;
+        ground.receiveShadow = true;
+        worldGroup.add(ground);
+        
+        // 岛屿底部的泥土层 (做成不规则形状)
+        const dirtGeo = new THREE.DodecahedronGeometry(18, 0);
+        const dirtMat = createToonMaterial(0x8b4513); // 棕色
+        const dirt = new THREE.Mesh(dirtGeo, dirtMat);
+        dirt.position.y = -12;
+        dirt.scale.set(1, 0.8, 1);
+        worldGroup.add(dirt);
+
+        // 羊圈 (光柱区)
+        const penGeo = new THREE.CylinderGeometry(4, 4, 0.2, 32);
+        const penMat = new THREE.MeshBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.3 });
+        const pen = new THREE.Mesh(penGeo, penMat);
+        pen.position.y = 0.1;
+        scene.add(pen); // 不放在 worldGroup 里，方便逻辑计算
+
+        // 装饰：树木与云朵
+        function createTree(x, z) {
+            const trunkGeo = new THREE.CylinderGeometry(0.2, 0.4, 1.5, 8);
+            const trunkMat = createToonMaterial(0x8b4513);
+            const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+            trunk.position.set(x, 1.5/2, z);
+            trunk.castShadow = true;
+            
+            const leavesGeo = new THREE.DodecahedronGeometry(1.2);
+            const leavesMat = createToonMaterial(0x228b22);
+            const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+            leaves.position.y = 1.5;
+            trunk.add(leaves);
+            
+            worldGroup.add(trunk);
+        }
+
+        // 生成一些随机树
+        for(let i=0; i<15; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 8 + Math.random() * 12; // 避开中间羊圈
+            createTree(Math.cos(angle)*radius, Math.sin(angle)*radius);
+        }
+
+        // 背景云 (简单的白色球体组合)
+        const clouds = [];
+        const cloudGeo = new THREE.SphereGeometry(1, 16, 16);
+        const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+        
+        for(let i=0; i<20; i++) {
+            const cloud = new THREE.Group();
+            // 每个云由3个球组成
+            for(let j=0; j<3; j++) {
+                const m = new THREE.Mesh(cloudGeo, cloudMat);
+                m.position.x = (j-1) * 1.2;
+                m.scale.setScalar(1 + Math.random()*0.5);
+                cloud.add(m);
+            }
+            cloud.position.set(
+                (Math.random()-0.5) * 80,
+                10 + Math.random() * 10,
+                (Math.random()-0.5) * 60 - 20
+            );
+            scene.add(cloud);
+            clouds.push({ mesh: cloud, speed: 0.02 + Math.random() * 0.03 });
+        }
+
+        // --- 4. 角色系统 ---
+        // 玩家 (机器人牧羊人)
+        const playerGroup = new THREE.Group();
+        const bodyGeo = new RoundedBoxGeometry(1, 1.2, 1, 4, 0.2);
+        const bodyMat = createToonMaterial(0xff69b4); // 粉色机器人
+        const playerMesh = new THREE.Mesh(bodyGeo, bodyMat);
+        playerMesh.position.y = 0.6;
+        playerMesh.castShadow = true;
+        playerGroup.add(playerMesh);
+        
+        // 眼睛
+        const eyeGeo = new THREE.SphereGeometry(0.15);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.position.set(-0.25, 0.8, 0.45);
+        const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+        rightEye.position.set(0.25, 0.8, 0.45);
+        playerGroup.add(leftEye);
+        playerGroup.add(rightEye);
+        
+        scene.add(playerGroup);
+
+        // 绵羊系统
+        const sheepList = [];
+        const TOTAL_SHEEP = 10;
+        let savedCount = 0;
+
+        function createSheep() {
+            const group = new THREE.Group();
+            
+            // 身体
+            const sBodyGeo = new THREE.DodecahedronGeometry(0.6); // 低多边形球体
+            const sBodyMat = createToonMaterial(0xffffff);
+            const body = new THREE.Mesh(sBodyGeo, sBodyMat);
+            body.position.y = 0.5;
+            body.castShadow = true;
+            group.add(body);
+
+            // 随机位置生成
+            const angle = Math.random() * Math.PI * 2;
+            const radius = 10 + Math.random() * 12;
+            group.position.set(Math.cos(angle)*radius, 0, Math.sin(angle)*radius);
+            
+            scene.add(group);
+            
+            return {
+                mesh: group,
+                state: 'IDLE', // IDLE, FOLLOW, SAVED
+                velocity: new THREE.Vector3(),
+                targetDir: new THREE.Vector3()
+            };
+        }
+
+        for(let i=0; i<TOTAL_SHEEP; i++) {
+            sheepList.push(createSheep());
+        }
+
+        // --- 5. 游戏逻辑与控制 ---
+        const keys = { w: false, a: false, s: false, d: false };
+        const playerSpeed = 0.2;
+        
+        // 键盘
+        window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+
+        // 虚拟摇杆 (触摸)
+        let joystickActive = false;
+        let joystickVector = { x: 0, y: 0 };
+        const joyZone = document.getElementById('joystick-zone');
+        const joyKnob = document.getElementById('joystick-knob');
+
+        // 检测触摸设备显示摇杆
+        if('ontouchstart' in window) {
+            joyZone.style.display = 'block';
+            document.getElementById('tutorial').innerText = "Drag joystick to Move";
+        }
+
+        joyZone.addEventListener('touchstart', (e) => {
+            joystickActive = true;
+            updateJoystick(e.touches[0]);
+        });
+        joyZone.addEventListener('touchmove', (e) => {
+            if(joystickActive) {
+                e.preventDefault(); // 防止滚动
+                updateJoystick(e.touches[0]);
+            }
+        });
+        joyZone.addEventListener('touchend', () => {
+            joystickActive = false;
+            joystickVector = { x: 0, y: 0 };
+            joyKnob.style.transform = `translate(-50%, -50%)`;
+        });
+
+        function updateJoystick(touch) {
+            const rect = joyZone.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            let dx = touch.clientX - centerX;
+            let dy = touch.clientY - centerY;
+            
+            // 限制半径
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            const maxDist = 35;
+            if(dist > maxDist) {
+                dx = (dx / dist) * maxDist;
+                dy = (dy / dist) * maxDist;
+            }
+            
+            joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            
+            // 归一化向量
+            joystickVector.x = dx / maxDist;
+            joystickVector.y = dy / maxDist;
+        }
+
+        // 主循环
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = clock.getDelta();
+            const time = clock.getElapsedTime();
+
+            // 1. 玩家移动
+            let moveX = 0, moveZ = 0;
+            if (keys.w) moveZ = -1;
+            if (keys.s) moveZ = 1;
+            if (keys.a) moveX = -1;
+            if (keys.d) moveX = 1;
+            
+            if (joystickActive) {
+                moveX = joystickVector.x;
+                moveZ = joystickVector.y;
+            }
+
+            if (moveX !== 0 || moveZ !== 0) {
+                // 移动
+                playerGroup.position.x += moveX * playerSpeed;
+                playerGroup.position.z += moveZ * playerSpeed;
+                
+                // 旋转朝向
+                const targetRotation = Math.atan2(moveX, moveZ);
+                playerGroup.rotation.y = targetRotation;
+
+                // 简单的行走动画 (上下弹跳)
+                playerMesh.position.y = 0.6 + Math.sin(time * 15) * 0.1;
+            } else {
+                playerMesh.position.y = 0.6;
+            }
+
+            // 边界限制 (不要掉下去)
+            const distFromCenter = Math.sqrt(playerGroup.position.x**2 + playerGroup.position.z**2);
+            if(distFromCenter > 23) {
+                const ratio = 23 / distFromCenter;
+                playerGroup.position.x *= ratio;
+                playerGroup.position.z *= ratio;
+            }
+
+            // 2. 绵羊逻辑 (Flocking Sim simplified)
+            sheepList.forEach(sheep => {
+                if(sheep.state === 'SAVED') return;
+
+                const distToPlayer = sheep.mesh.position.distanceTo(playerGroup.position);
+                const distToPen = sheep.mesh.position.length(); // 羊圈在 (0,0,0)
+
+                // 状态机
+                if (distToPen < 4) {
+                    // 进羊圈了
+                    sheep.state = 'SAVED';
+                    sheep.mesh.scale.setScalar(0.5); // 变小
+                    // 庆祝跳跃
+                    gsapAnimation(sheep.mesh); 
+                    savedCount++;
+                    document.getElementById('sheep-count').innerText = `${savedCount} / ${TOTAL_SHEEP}`;
+                    if(savedCount === TOTAL_SHEEP) {
+                        document.getElementById('message').style.opacity = 1;
+                    }
+                } else if (distToPlayer < 5) {
+                    // 看到玩家，开始跟随
+                    sheep.state = 'FOLLOW';
+                } else if (distToPlayer > 8) {
+                    // 离太远，丢失
+                    sheep.state = 'IDLE';
+                }
+
+                // 行为移动
+                if (sheep.state === 'FOLLOW') {
+                    // 目标：玩家
+                    const dir = new THREE.Vector3().subVectors(playerGroup.position, sheep.mesh.position).normalize();
+                    // 稍微保持一点距离，不要穿模
+                    if(distToPlayer > 1.5) {
+                        sheep.mesh.position.add(dir.multiplyScalar(0.12)); // 羊跑得比人慢
+                        sheep.mesh.lookAt(playerGroup.position);
+                    }
+                    // 蹦蹦跳跳
+                    sheep.mesh.position.y = Math.abs(Math.sin(time * 10 + sheep.mesh.id)) * 0.5;
+                } else if (sheep.state === 'IDLE') {
+                    // 随机游荡 (Perlin noise alternative)
+                    if(Math.random() < 0.02) {
+                        sheep.targetDir.set(Math.random()-0.5, 0, Math.random()-0.5).normalize();
+                    }
+                    sheep.mesh.position.add(sheep.targetDir.clone().multiplyScalar(0.02));
+                    
+                    // 限制范围
+                    if(sheep.mesh.position.length() > 20) {
+                        sheep.targetDir.negate(); // 掉头
+                    }
+                    
+                    if(sheep.targetDir.length() > 0.1) {
+                        const lookTarget = sheep.mesh.position.clone().add(sheep.targetDir);
+                        sheep.mesh.lookAt(lookTarget);
+                    }
+                    
+                    sheep.mesh.position.y = 0; // 休息
+                }
+            });
+
+            // 3. 环境动画
+            // 云朵飘动
+            clouds.forEach(c => {
+                c.mesh.position.x += c.speed;
+                if(c.mesh.position.x > 50) c.mesh.position.x = -50;
+            });
+
+            // 相机跟随 (Top-Down RPG style)
+            camera.position.x = playerGroup.position.x * 0.5; // 稍微延迟跟随
+            camera.position.z = playerGroup.position.z * 0.5 + 20;
+            camera.lookAt(playerGroup.position.x, 0, playerGroup.position.z);
+
+            renderer.render(scene, camera);
+        }
+
+        // 简单的 GSAP 模拟 (如果不引入外部库，手写一个简单的弹跳)
+        function gsapAnimation(mesh) {
+            let t = 0;
+            const interval = setInterval(() => {
+                t += 0.2;
+                mesh.position.y = Math.sin(t) * 2;
+                mesh.rotation.y += 0.2;
+                if(t > Math.PI * 2) {
+                    clearInterval(interval);
+                    mesh.position.y = 0;
+                }
+            }, 30);
+        }
+
+        // 窗口自适应
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
