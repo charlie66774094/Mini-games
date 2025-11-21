@@ -4,7 +4,7 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Tech](https://img.shields.io/badge/Three.js-r160-black) ![AI](https://img.shields.io/badge/Co--Pilot-Gemini%203-4285F4)
 
-##点击游玩：*https://charlie66774094.github.io/Mini-games/*
+## 点击游玩：*https://charlie66774094.github.io/Mini-games/*
 
 ## 💡 关于本项目 (About)
 
