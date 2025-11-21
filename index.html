@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>POLYVERSE | 维度入口</title>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* --- 全局变量与重置 --- */
+        :root {
+            --neon-blue: #00f3ff;
+            --neon-purple: #bc13fe;
+            --bg-dark: #050505;
+            --glass: rgba(255, 255, 255, 0.05);
+        }
+        
+        body { margin: 0; overflow: hidden; background-color: var(--bg-dark); font-family: 'Rajdhani', sans-serif; color: white; -webkit-tap-highlight-color: transparent; }
+        
+        /* --- 3D 背景层 --- */
+        #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+        
+        /* --- 装饰性网格 --- */
+        .grid-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none;
+            background-image: 
+                linear-gradient(rgba(0, 243, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 243, 255, 0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            mask-image: radial-gradient(circle at center, black 40%, transparent 100%);
+        }
+
+        /* --- 主 UI 容器 --- */
+        #ui-layer {
+            position: relative; z-index: 10; width: 100%; height: 100vh;
+            display: flex; flex-direction: column; 
+            box-sizing: border-box;
+            padding: 40px 5vw;
+            justify-content: center;
+        }
+
+        /* 顶部导航 */
+        nav {
+            position: absolute; top: 30px; left: 5vw; right: 5vw; display: flex; align-items: center; justify-content: space-between;
+        }
+        .logo { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 900; letter-spacing: 2px; text-shadow: 0 0 10px var(--neon-blue); }
+        .status { font-size: 0.8rem; color: var(--neon-blue); border: 1px solid var(--neon-blue); padding: 2px 8px; border-radius: 2px; background: rgba(0, 243, 255, 0.1); }
+
+        /* 核心布局区 (桌面端: 左右布局) */
+        .content-wrapper { 
+            display: flex; align-items: center; justify-content: space-between; 
+            width: 100%; height: 70%; margin-top: 40px;
+        }
+        
+        /* 左侧：文本详情 */
+        .text-panel { width: 40%; opacity: 0; transform: translateX(-50px); z-index: 20; }
+        .game-number { font-family: 'Orbitron'; font-size: 4rem; color: rgba(255,255,255,0.1); line-height: 1; margin-bottom: -10px; display: block; }
+        .game-title { font-family: 'Orbitron'; font-size: 3.5rem; margin: 0; text-transform: uppercase; line-height: 1.1; background: linear-gradient(90deg, #fff, var(--neon-blue)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .game-desc { font-size: 1.1rem; line-height: 1.6; color: #ccc; margin: 20px 0 40px 0; border-left: 2px solid var(--neon-purple); padding-left: 20px; text-shadow: 0 2px 5px black; background: rgba(0,0,0,0.4); padding-right: 10px;}
+        
+        /* 启动按钮 */
+        .play-btn {
+            background: rgba(0,0,0,0.3); color: var(--neon-blue); border: 1px solid var(--neon-blue);
+            padding: 15px 40px; font-family: 'Orbitron'; font-size: 1rem; letter-spacing: 2px;
+            cursor: pointer; transition: 0.3s; position: relative; overflow: hidden;
+            text-transform: uppercase; backdrop-filter: blur(5px);
+        }
+        .play-btn:hover { background: var(--neon-blue); color: black; box-shadow: 0 0 20px var(--neon-blue); }
+
+        /* 右侧：卡片轮播 */
+        .carousel-container { width: 50%; height: 400px; display: flex; align-items: center; }
+        .carousel { display: flex; gap: 15px; perspective: 1000px; padding-left: 20px; }
+        
+        .game-card {
+            min-width: 160px; height: 240px;
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            display: flex; flex-direction: column; justify-content: flex-end; padding: 15px;
+            cursor: pointer; transition: 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative; overflow: hidden;
+        }
+        
+        /* 卡片激活状态 */
+        .game-card.active {
+            min-width: 200px; height: 280px;
+            background: linear-gradient(180deg, rgba(0,0,0,0), rgba(0, 243, 255, 0.15));
+            border-color: var(--neon-blue);
+            box-shadow: 0 0 30px rgba(0, 243, 255, 0.2);
+            transform: scale(1.05) translateX(-10px);
+            z-index: 5;
+        }
+        
+        /* 卡片悬停 */
+        .game-card:hover:not(.active) { transform: translateY(-10px); border-color: rgba(255,255,255,0.5); }
+
+        /* 卡片内视觉 */
+        .card-visual { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; opacity: 0.6; transition: 0.3s; }
+        .game-card.active .card-visual { opacity: 0.8; }
+        .card-title { font-family: 'Orbitron'; font-size: 1rem; margin-bottom: 5px; font-weight: 700; pointer-events: none; }
+        .card-genre { font-size: 0.7rem; color: var(--neon-purple); text-transform: uppercase; letter-spacing: 1px; pointer-events: none; }
+
+        /* 底部装饰 */
+        footer { position: absolute; bottom: 20px; width: 90%; display: flex; justify-content: space-between; color: rgba(255,255,255,0.3); font-size: 0.7rem; pointer-events: none; }
+
+        /* --- 📱 移动端适配 (Media Queries) --- */
+        @media screen and (max-width: 768px) {
+            /* 布局改为纵向 */
+            #ui-layer { padding: 20px; justify-content: flex-start; }
+            .content-wrapper { flex-direction: column; height: auto; margin-top: 80px; }
+            
+            /* 文本区域 */
+            .text-panel { width: 100%; text-align: center; margin-bottom: 30px; transform: none; opacity: 1; }
+            .game-desc { 
+                border-left: none; border-top: 2px solid var(--neon-purple); 
+                padding: 15px 0 0 0; margin: 15px 0 25px 0; font-size: 0.95rem;
+            }
+            .game-title { font-size: 2.2rem; }
+            .game-number { font-size: 2.5rem; margin-bottom: 0; }
+            .play-btn { width: 100%; padding: 15px 0; font-size: 1.1rem; }
+
+            /* 卡片区域 (横向滚动) */
+            .carousel-container { 
+                width: 100%; height: auto; 
+                overflow-x: auto; 
+                padding-bottom: 20px;
+                /* 隐藏滚动条 */
+                -ms-overflow-style: none;  /* IE and Edge */
+                scrollbar-width: none;  /* Firefox */
+            }
+            .carousel-container::-webkit-scrollbar { display: none; } /* Chrome */
+            
+            .carousel { padding-left: 5px; padding-right: 20px; }
+            .game-card { min-width: 130px; height: 180px; }
+            .game-card.active { min-width: 150px; height: 210px; transform: none; }
+            
+            /* 底部文字 */
+            footer { display: none; }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+    <div class="grid-overlay"></div>
+
+    <div id="ui-layer">
+        <nav>
+            <div class="logo">POLYVERSE</div>
+            <div class="status">SYSTEM ONLINE</div>
+        </nav>
+
+        <div class="content-wrapper">
+            <div class="text-panel">
+                <span class="game-number">01</span>
+                <h1 class="game-title">ZEN STACK</h1>
+                <p class="game-desc">在极简的虚空中体验物理堆叠的禅意。运用精准的节奏感，构建通往无限高度的玻璃塔楼。</p>
+                <button class="play-btn" onclick="startGame()">INITIALIZE GAME</button>
+            </div>
+
+            <div class="carousel-container">
+                <div class="carousel" id="carousel">
+                    <div class="game-card active" data-id="0">
+                        <div class="card-visual" style="background: linear-gradient(45deg, #2b5876, #4e4376);"></div>
+                        <div class="card-title">Zen Stack</div>
+                        <div class="card-genre">Puzzle / Physics</div>
+                    </div>
+                    
+                    <div class="game-card" data-id="1">
+                        <div class="card-visual" style="background: linear-gradient(45deg, #16a085, #f4d03f);"></div>
+                        <div class="card-title">Neon Drift</div>
+                        <div class="card-genre">Racing (WIP)</div>
+                    </div>
+
+                    <div class="game-card" data-id="2">
+                        <div class="card-visual" style="background: linear-gradient(45deg, #cc2b5e, #753a88);"></div>
+                        <div class="card-title">Sky Shepherd</div>
+                        <div class="card-genre">Adventure (WIP)</div>
+                    </div>
+
+                    <div class="game-card" data-id="3">
+                        <div class="card-visual" style="background: linear-gradient(45deg, #000428, #004e92);"></div>
+                        <div class="card-title">Mecha Def</div>
+                        <div class="card-genre">Strategy (WIP)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <div>LAT: 34.0522 / LON: -118.2437</div>
+            <div>SCROLL TO NAVIGATE // CLICK TO SELECT</div>
+        </footer>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+        // --- 1. Three.js 环境设置 ---
+        const scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x050505, 0.002);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        // 移动端相机拉远一点，防止物体太大挡住字
+        camera.position.z = window.innerWidth < 768 ? 40 : 30;
+
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 性能优化
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+        // --- 2. 创建核心物体 ---
+        const geometry = new THREE.IcosahedronGeometry(10, 1);
+        const wireframe = new THREE.WireframeGeometry(geometry);
+        
+        const material = new THREE.LineBasicMaterial({ 
+            color: 0x00f3ff,
+            transparent: true,
+            opacity: 0.3
+        });
+        
+        const core = new THREE.LineSegments(wireframe, material);
+        scene.add(core);
+
+        // 内部黑色球体（遮挡背景）
+        const innerGeo = new THREE.IcosahedronGeometry(9.8, 1);
+        const innerMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+        const innerSphere = new THREE.Mesh(innerGeo, innerMat);
+        scene.add(innerSphere);
+
+        // --- 3. 粒子场 ---
+        const particlesGeometry = new THREE.BufferGeometry();
+        const particlesCount = 700;
+        const posArray = new Float32Array(particlesCount * 3);
+
+        for(let i = 0; i < particlesCount * 3; i++) {
+            posArray[i] = (Math.random() - 0.5) * 100; 
+        }
+
+        particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const particlesMaterial = new THREE.PointsMaterial({
+            size: 0.15,
+            color: 0xbc13fe, 
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+        const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+        scene.add(particlesMesh);
+
+        // --- 4. 交互逻辑 (鼠标 + 触摸) ---
+        let mouseX = 0, mouseY = 0;
+        let targetX = 0, targetY = 0;
+        const windowHalfX = window.innerWidth / 2;
+        const windowHalfY = window.innerHeight / 2;
+
+        // 桌面鼠标
+        document.addEventListener('mousemove', (event) => {
+            mouseX = (event.clientX - windowHalfX);
+            mouseY = (event.clientY - windowHalfY);
+        });
+
+        // 移动端触摸
+        document.addEventListener('touchmove', (event) => {
+            if(event.touches.length > 0) {
+                mouseX = (event.touches[0].clientX - windowHalfX);
+                mouseY = (event.touches[0].clientY - windowHalfY);
+            }
+        }, { passive: true });
+
+        // --- 5. 动画循环 ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            const elapsedTime = clock.getElapsedTime();
+
+            // 阻尼平滑效果
+            targetX = mouseX * 0.001;
+            targetY = mouseY * 0.001;
+
+            // 自动旋转
+            core.rotation.y += 0.003;
+            core.rotation.x += 0.001;
+            
+            // 呼吸效果
+            const scale = 1 + Math.sin(elapsedTime) * 0.05;
+            core.scale.set(scale, scale, scale);
+            innerSphere.scale.set(scale, scale, scale);
+
+            // 视差交互
+            core.rotation.y += 0.05 * (targetX - core.rotation.y);
+            core.rotation.x += 0.05 * (targetY - core.rotation.x);
+
+            // 粒子旋转
+            particlesMesh.rotation.y = -elapsedTime * 0.05;
+
+            renderer.render(scene, camera);
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // 窗口大小调整
+        window.addEventListener('resize', () => {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            
+            // 移动端适配相机距离
+            camera.position.z = width < 768 ? 40 : 30;
+            
+            renderer.setSize(width, height);
+        });
+
+        // --- 6. UI 逻辑 ---
+        
+        const gamesData = [
+            { id: 0, title: "ZEN STACK", number: "01", desc: "在极简的虚空中体验物理堆叠的禅意。运用精准的节奏感，构建通往无限高度的玻璃塔楼。", color: "#00f3ff" },
+            { id: 1, title: "NEON DRIFT", number: "02", desc: "赛博朋克夜景下的极速狂飙。控制重力赛车，在湿滑的霓虹跑道上完成完美漂移。(开发中)", color: "#bc13fe" },
+            { id: 2, title: "SKY SHEPHERD", number: "03", desc: "吉卜力风格的云端牧场。引导云层，放牧机械绵羊，探索失落的天空遗迹。(开发中)", color: "#f4d03f" },
+            { id: 3, title: "MECHA DEFENSE", number: "04", desc: "重工业硬核塔防。组装你的机甲防线，抵御来自虚空的无限虫族进攻。(开发中)", color: "#e74c3c" }
+        ];
+
+        const cards = document.querySelectorAll('.game-card');
+        const textPanel = document.querySelector('.text-panel');
+        const gameNumber = document.querySelector('.game-number');
+        const gameTitle = document.querySelector('.game-title');
+        const gameDesc = document.querySelector('.game-desc');
+        const playBtn = document.querySelector('.play-btn');
+
+        // 初始动画
+        gsap.to(".text-panel", { opacity: 1, x: 0, duration: 1, delay: 0.5 });
+        gsap.from(".game-card", { y: 50, opacity: 0, stagger: 0.1, duration: 0.8, ease: "back.out(1.7)" });
+
+        cards.forEach((card, index) => {
+            card.addEventListener('click', () => {
+                // UI 更新
+                cards.forEach(c => c.classList.remove('active'));
+                card.classList.add('active');
+
+                const data = gamesData[index];
+
+                // 动画切换文字
+                const tl = gsap.timeline();
+                tl.to(".text-panel", { opacity: 0, x: -20, duration: 0.2 })
+                  .call(() => {
+                      gameNumber.innerText = data.number;
+                      gameTitle.innerText = data.title;
+                      gameDesc.innerText = data.desc;
+                      playBtn.style.borderColor = data.color;
+                      playBtn.style.color = data.color;
+                  })
+                  .to(".text-panel", { opacity: 1, x: 0, duration: 0.4 });
+
+                // 背景反馈
+                gsap.to(core.rotation, { y: core.rotation.y + 1, duration: 0.5 });
+            });
+        });
+
+        // --- 7. 游戏跳转逻辑 (连接 game1.html) ---
+        window.startGame = function() {
+            const activeId = document.querySelector('.game-card.active').dataset.id;
+            
+            // 震动反馈 (仅安卓有效)
+            if (navigator.vibrate) navigator.vibrate(50);
+
+            if(activeId == 0) {
+                // 视觉转场
+                const ui = document.getElementById('ui-layer');
+                const canvas = document.getElementById('canvas-container');
+                
+                ui.style.transition = "opacity 0.5s ease";
+                canvas.style.transition = "opacity 0.5s ease";
+                ui.style.opacity = 0;
+                canvas.style.opacity = 0;
+
+                // 延迟跳转
+                setTimeout(() => {
+                    window.location.href = 'game1.html'; 
+                }, 500);
+            } else {
+                alert("🚧 系统提示：该区域尚未解锁 (Coming Soon)");
+            }
+        };
+    </script>
+</body>
+</html>
