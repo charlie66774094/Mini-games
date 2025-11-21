@@ -360,31 +360,47 @@
             });
         });
 
-        // --- 7. 游戏跳转逻辑 (连接 game1.html) ---
-        window.startGame = function() {
-            const activeId = document.querySelector('.game-card.active').dataset.id;
-            
-            // 震动反馈 (仅安卓有效)
-            if (navigator.vibrate) navigator.vibrate(50);
+            // --- 7. 游戏跳转逻辑 (连接所有游戏页面) ---
+    window.startGame = function() {
+        const activeId = parseInt(document.querySelector('.game-card.active').dataset.id);
+    
+        // 震动反馈 (仅安卓有效)
+        if (navigator.vibrate) navigator.vibrate(50);
 
-            if(activeId == 0) {
-                // 视觉转场
-                const ui = document.getElementById('ui-layer');
-                const canvas = document.getElementById('canvas-container');
-                
-                ui.style.transition = "opacity 0.5s ease";
-                canvas.style.transition = "opacity 0.5s ease";
-                ui.style.opacity = 0;
-                canvas.style.opacity = 0;
+        // 根据activeId跳转到对应的游戏页面
+        let targetPage = '';
+        switch(activeId) {
+            case 0:
+                targetPage = 'game1.html';
+                break;
+            case 1:
+                targetPage = 'game2.html';
+                break;
+            case 2:
+                targetPage = 'game3.html';
+                break;
+            case 3:
+                // 第四个游戏还在开发中
+                alert("🚧🚧 系统提示：该区域尚未解锁 (Coming Soon)");
+                return;
+            default:
+                targetPage = 'game1.html';
+        }
 
-                // 延迟跳转
-                setTimeout(() => {
-                    window.location.href = 'game1.html'; 
-                }, 500);
-            } else {
-                alert("🚧 系统提示：该区域尚未解锁 (Coming Soon)");
-            }
-        };
+        // 视觉转场效果
+        const ui = document.getElementById('ui-layer');
+        const canvas = document.getElementById('canvas-container');
+    
+        ui.style.transition = "opacity 0.5s ease";
+        canvas.style.transition = "opacity 0.5s ease";
+        ui.style.opacity = 0;
+        canvas.style.opacity = 0;
+    
+        // 延迟跳转
+        setTimeout(() => {
+            window.location.href = targetPage; 
+        }, 500);
+    };
     </script>
 </body>
 </html>
